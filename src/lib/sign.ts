@@ -1,4 +1,4 @@
-import * as dayJs from "dayjs";
+import * as dayJs from 'dayjs';
 
 export type DataSignature = {
   signature: string;
@@ -12,12 +12,8 @@ export type Token = {
   key?: string;
 };
 
-export async function sign(
-  signer: Signer,
-  requester: string,
-  ttlMins: number = 2
-) {
-  const expiry = dayJs().add(ttlMins, "minute").toISOString();
+export async function sign(signer: Signer, requester: string, ttlMins: number = 2) {
+  const expiry = dayJs().add(ttlMins, 'minute').toISOString();
   const message = `
  Web3-Token-Version: 1
  Expires: ${expiry}
@@ -26,15 +22,15 @@ export async function sign(
 
   const signedMsg = await signer(message);
   const result: Partial<Token> = {
-    body: Buffer.from(message).toString("hex"),
+    body: Buffer.from(message).toString('hex'),
   };
 
-  if (typeof signedMsg === "string") {
+  if (typeof signedMsg === 'string') {
     result.signature = signedMsg;
   } else {
     result.signature = signedMsg.signature;
     result.key = signedMsg.key;
   }
 
-  return Buffer.from(JSON.stringify(result)).toString("base64");
+  return Buffer.from(JSON.stringify(result)).toString('base64');
 }

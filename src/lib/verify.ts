@@ -1,92 +1,64 @@
-import Loader from "../cardano/Loader";
-import type {
-  Address,
-  Ed25519Signature,
-  PublicKey,
-} from "@emurgo/cardano-serialization-lib-browser";
+import Loader from '../cardano/Loader';
+import type { Address, PublicKey } from '@emurgo/cardano-serialization-lib-browser';
+import type { COSEKey, COSESign1 } from '@emurgo/cardano-message-signing-browser';
 
 export async function verify(token: string) {
   await Loader.load();
 
-  const buf = Buffer.from(token, "base64");
+  const buf = Buffer.from(token, 'base64');
 
-  try {
-    const { signature, key } = JSON.parse(buf.toString()) as {
-      body: string;
-      signature: string;
-      key?: string;
-    };
+  const { signature, key } = JSON.parse(buf.toString()) as {
+    body: string;
+    signature: string;
+    key?: string;
+  };
 
-    let publicKey: PublicKey;
-    let address: Address;
+  let publicKey: PublicKey;
+  let address: Address;
 
-    let ed25519Sig: Ed25519Signature;
-    if (key) {
-      const message = Loader.Message.COSESign1.from_bytes(
-        Buffer.from(signature, "hex")
-      );
-      const coseKey = Loader.Message.COSEKey.from_bytes(
-        Buffer.from(key, "hex")
-      );
+  if (key) {
+    const message: COSESign1 = Loader.Message.COSESign1.from_bytes(Buffer.from(signature, 'hex'));
+    const coseKey: COSEKey = Loader.Message.COSEKey.from_bytes(Buffer.from(key, 'hex'));
 
-      const headermap = message.headers().protected().deserialized_headers();
-      address = Loader.Cardano.Address.from_bytes(
-        headermap.header(Loader.Message.Label.new_text("address")).as_bytes()
-      );
-      publicKey = Loader.Cardano.PublicKey.from_bytes(
-        coseKey
-          .header(
-            Loader.Message.Label.new_int(
-              Loader.Message.Int.new_negative(
-                Loader.Message.BigNum.from_str("2")
-              )
-            )
-          )
-          .as_bytes()
-      );
-      ed25519Sig = Loader.Cardano.Ed25519Signature.from_bytes(
-        message.signature()
-      );
+    const headermap = message.headers().protected().deserialized_headers();
+    address = Loader.Cardano.Address.from_bytes(headermap.header(Loader.Message.Label.new_text('address')).as_bytes());
+    publicKey = Loader.Cardano.PublicKey.from_bytes(
+      coseKey
+        .header(Loader.Message.Label.new_int(Loader.Message.Int.new_negative(Loader.Message.BigNum.from_str('2'))))
+        .as_bytes(),
+    );
+    const ed25519Sig = Loader.Cardano.Ed25519Signature.from_bytes(message.signature());
 
-      console.log(
-        "Test PubKey 1",
-        publicKey.verify(message.signed_data().to_bytes(), ed25519Sig)
-      );
-    } else {
-      const x = Loader.Message.COSESignature.from_bytes(
-        Buffer.from(signature, "hex")
-      );
-
-      const headers = x.headers().protected();
-
-      const headersMap = headers.deserialized_headers();
-      // listHeaders(headersMap.keys(), headersMap);
-
-      address = Loader.Cardano.Address.from_bytes(
-        headersMap.header(Loader.Message.Label.new_text("address")).as_bytes()
-      );
-
-      publicKey = Loader.Cardano.PublicKey.from_bytes(headersMap.key_id());
-
-      // console.log("signature", Buffer.from(x.signature()).toString("hex"));
-
-      // listHeaders(x.headers().unprotected().keys(), x.headers().unprotected());
+    if (!publicKey.verify(message.signed_data().to_bytes(), ed25519Sig)) {
+      throw new Error('Message tampered');
     }
+  } else {
+    const x = Loader.Message.COSESignature.from_bytes(Buffer.from(signature, 'hex'));
 
-    if (!verifyAddress(address, publicKey)) {
-      throw new Error("Unable to validate provided Token");
-    }
+    const headers = x.headers().protected();
 
-    // console.log(body);
-    // if (!publicKey.verify(Buffer.from(body), ed25519Sig)) {
-    //   throw new Error(
-    //     `Message integrity check failed (has the message been tampered with?)`
-    //   );
-    // }
-  } catch (err) {
-    console.error(err);
-    throw err;
+    const headersMap = headers.deserialized_headers();
+    // listHeaders(headersMap.keys(), headersMap);
+
+    address = Loader.Cardano.Address.from_bytes(headersMap.header(Loader.Message.Label.new_text('address')).as_bytes());
+
+    publicKey = Loader.Cardano.PublicKey.from_bytes(headersMap.key_id());
+
+    // console.log("signature", Buffer.from(x.signature()).toString("hex"));
+
+    // listHeaders(x.headers().unprotected().keys(), x.headers().unprotected());
   }
+
+  if (!verifyAddress(address, publicKey)) {
+    throw new Error('Unable to validate provided Token');
+  }
+
+  // console.log(body);
+  // if (!publicKey.verify(Buffer.from(body), ed25519Sig)) {
+  //   throw new Error(
+  //     `Message integrity check failed (has the message been tampered with?)`
+  //   );
+  // }
 }
 
 // function listHeaders(keys: Labels, headers: HeaderMap) {
@@ -125,35 +97,26 @@ export async function verify(token: string) {
 // }
 
 const verifyAddress = (checkAddress: Address, publicKey: PublicKey) => {
-  try {
-    //reconstruct address
+  // Reconstruct address
 
-    const paymentKeyHash = publicKey.hash();
+  const paymentKeyHash = publicKey.hash();
 
-    const baseAddress = Loader.Cardano.BaseAddress.from_address(checkAddress);
-    const stakeKeyHash = baseAddress.stake_cred().to_keyhash();
+  const baseAddress = Loader.Cardano.BaseAddress.from_address(checkAddress);
+  const stakeKeyHash = baseAddress.stake_cred().to_keyhash();
 
-    const reconstructedAddress = Loader.Cardano.BaseAddress.new(
-      checkAddress.network_id(),
-      Loader.Cardano.StakeCredential.from_keyhash(paymentKeyHash),
-      Loader.Cardano.StakeCredential.from_keyhash(stakeKeyHash)
-    );
+  const reconstructedAddress = Loader.Cardano.BaseAddress.new(
+    checkAddress.network_id(),
+    Loader.Cardano.StakeCredential.from_keyhash(paymentKeyHash),
+    Loader.Cardano.StakeCredential.from_keyhash(stakeKeyHash),
+  );
 
-    const status =
-      checkAddress.to_bech32() ===
-      reconstructedAddress.to_address().to_bech32();
+  const status = checkAddress.to_bech32() === reconstructedAddress.to_address().to_bech32();
 
-    return {
-      status,
-      msg: status
-        ? "Valid Address"
-        : "Base Address does not validate to Reconstructed address",
-      code: 1,
-    };
-  } catch (e) {
-    console.error("Err verifyAddress", e);
-    throw e;
-  }
+  return {
+    status,
+    msg: status ? 'Valid Address' : 'Base Address does not validate to Reconstructed address',
+    code: 1,
+  };
 };
 
 // const signature =
